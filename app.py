@@ -21,7 +21,7 @@ st.markdown("""
     .main-title { font-size: 1.8rem !important; color: #1E1E1E; text-align: center; font-weight: 800; margin-bottom: 5px; }
     .sub-text { font-size: 0.9rem; color: #555; text-align: center; margin-bottom: 20px; }
     
-    /* 배지 스타일 (공통) */
+    /* 배지 스타일 */
     .badge {
         padding: 3px 8px;
         border-radius: 4px;
@@ -31,8 +31,8 @@ st.markdown("""
     }
     .badge-red { background-color: #ffebee; color: #d32f2f; }
     .badge-blue { background-color: #e3f2fd; color: #1976d2; }
-    .badge-gray { background-color: #f5f5f5; color: #616161; }
-
+    
+    /* 🌟 [수정됨] 상세 정보 박스 스타일 (아래쪽 여백 추가) */
     .detail-info {
         font-size: 0.85rem;
         color: #444;
@@ -40,6 +40,7 @@ st.markdown("""
         padding: 12px;
         border-radius: 8px;
         margin-top: 12px;
+        margin-bottom: 8px; /* 👈 여기에 여백을 줘서 카드를 아래로 키움 */
         line-height: 1.6;
         border: 1px solid #eee;
     }
@@ -89,7 +90,7 @@ def get_market_cap_data():
     except:
         return {}
 
-# 4. 상세 분석 데이터 (오늘 등락률 추가!)
+# 4. 상세 분석 데이터
 @st.cache_data(ttl=3600)
 def get_stock_analysis(code):
     try:
@@ -103,8 +104,6 @@ def get_stock_analysis(code):
         close = last_row['Close']
         volume = last_row['Volume']
         
-        # 🌟 [NEW] 오늘 하루 변동폭 (Change 컬럼 활용)
-        # fdr의 Change는 0.03 (3%) 형태로 나옴
         daily_change = last_row['Change'] * 100 
         
         amount = int((close * volume) / 100000000)
@@ -122,7 +121,7 @@ def get_stock_analysis(code):
             'amount': amount,
             'trend': trend,
             'box_range': box_range,
-            'daily_change': daily_change # 추가됨
+            'daily_change': daily_change
         }
     except:
         return None, None
@@ -198,7 +197,6 @@ if raw_df is not None and not raw_df.empty:
     st.subheader("📋 포착 종목 리스트")
     
     for index, row in df.iterrows():
-        # 총 수익률 (포착가 대비)
         total_profit = row['수익률_숫자']
         total_profit_str = row['수익률(%)']
         price = row['현재가_표시']
@@ -209,10 +207,8 @@ if raw_df is not None and not raw_df.empty:
         except:
             price_fmt = price
         
-        # 상세 데이터 계산
         chart_data, analysis = get_stock_analysis(code)
         
-        # 시가총액
         marcap_val = marcap_dict.get(code, 0)
         marcap_str = f"{int(marcap_val / 100000000):,}억원" if marcap_val > 0 else "정보없음"
 
@@ -220,11 +216,8 @@ if raw_df is not None and not raw_df.empty:
             col_info, col_chart = st.columns([1.8, 1.2])
             
             with col_info:
-                # 1. 종목명
                 st.markdown(f"**{row['종목명']}** <span style='color:#888; font-size:0.8em;'>({code})</span>", unsafe_allow_html=True)
                 
-                # 2. 수익률 배지 2개 (누적 / 오늘)
-                # 배지 색상 결정
                 total_color = "badge-red" if total_profit >= 0 else "badge-blue"
                 
                 daily_badge_html = ""
@@ -240,9 +233,7 @@ if raw_df is not None and not raw_df.empty:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 3. 현재가
                 st.markdown(f"<div style='font-size:0.95em; font-weight:bold;'>{price_fmt}</div>", unsafe_allow_html=True)
-                
                 st.caption(f"{row['탐색일']} 포착")
             
             with col_chart:
@@ -253,7 +244,6 @@ if raw_df is not None and not raw_df.empty:
                 else:
                     st.caption("차트 로딩 실패")
             
-            # 상세 정보 박스
             if analysis:
                 st.markdown(f"""
                 <div class="detail-info">
