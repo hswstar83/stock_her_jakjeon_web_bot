@@ -23,15 +23,16 @@ st.markdown("""
     .profit-badge-plus { background-color: #ffebee; color: #d32f2f; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
     .profit-badge-minus { background-color: #e3f2fd; color: #1976d2; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
     
-    /* 상세 정보 텍스트 스타일 */
+    /* 상세 정보 텍스트 스타일 (카드 안에 쏙 들어오게 수정) */
     .detail-info {
         font-size: 0.85rem;
         color: #444;
         background-color: #f8f9fa;
-        padding: 10px;
+        padding: 12px;
         border-radius: 8px;
-        margin-top: 8px;
+        margin-top: 12px; /* 위쪽 요소와 간격 */
         line-height: 1.6;
+        border: 1px solid #eee;
     }
     
     /* 요약 지표 가로 정렬 */
@@ -50,7 +51,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. 구글 시트 데이터 로드
+# 2. 데이터 로드
 @st.cache_data(ttl=60)
 def load_data():
     try:
@@ -71,46 +72,38 @@ def load_data():
     except:
         return pd.DataFrame()
 
-# 3. [NEW] 시가총액 정보 미리 가져오기 (캐싱)
-@st.cache_data(ttl=3600) # 1시간마다 갱신
+# 3. 시가총액 데이터
+@st.cache_data(ttl=3600)
 def get_market_cap_data():
     try:
-        # KRX 전체 상장 종목 가져오기
         stocks = fdr.StockListing('KRX')
-        # 코드와 시가총액만 딕셔너리로 저장 {'005930': 400000000000, ...}
         return stocks.set_index('Code')['Marcap'].to_dict()
     except:
         return {}
 
-# 4. 상세 분석 데이터 및 차트 데이터 가져오기
+# 4. 상세 분석 및 차트 데이터
 @st.cache_data(ttl=3600)
 def get_stock_analysis(code):
     try:
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=100) # 60일선과 박스권 계산 위해 넉넉히
+        start_date = end_date - timedelta(days=100)
         df = fdr.DataReader(code, start=start_date)
         
         if len(df) < 60: return None, None
         
-        # 최신 데이터
         last_row = df.iloc[-1]
         close = last_row['Close']
         volume = last_row['Volume']
         
-        # 1. 거래대금 (억 원)
         amount = int((close * volume) / 100000000)
-        
-        # 2. 추세 (60일선)
         ma60 = df['Close'].rolling(60).mean().iloc[-1]
         trend = "60일선 위 (상승/안정)" if close >= ma60 else "60일선 아래 (하락/위험)"
         
-        # 3. 에너지 응축 (최근 60일 박스권)
         df_recent = df.iloc[-60:]
         max_p = df_recent['Close'].max()
         min_p = df_recent['Close'].min()
         box_range = ((max_p - min_p) / min_p) * 100
         
-        # 차트용 데이터 (최근 30일)
         chart_data = df['Close'].tail(30)
         
         return chart_data, {
@@ -121,7 +114,7 @@ def get_stock_analysis(code):
     except:
         return None, None
 
-# 5. 줌인 차트 함수
+# 5. [수정됨] 차트 그리기 (고정 기능 추가)
 def plot_sparkline(data, color_hex):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -131,11 +124,15 @@ def plot_sparkline(data, color_hex):
     min_val = data.min()
     max_val = data.max()
     padding = (max_val - min_val) * 0.1 
+    
     fig.update_layout(
         showlegend=False, margin=dict(l=0, r=0, t=0, b=0),
         height=80, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False), 
-        yaxis=dict(visible=False, range=[min_val - padding, max_val + padding]) 
+        
+        # 🌟 [핵심] 차트 고정 (줌, 드래그 방지)
+        dragmode=False, 
+        xaxis=dict(visible=False, fixedrange=True), # X축 고정
+        yaxis=dict(visible=False, range=[min_val - padding, max_val + padding], fixedrange=True) # Y축 고정
     )
     return fig
 
@@ -153,14 +150,13 @@ def clean_data(df):
 st.markdown('<div class="main-title">🦅 작전주 헌터 대시보드</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">세력의 매집 흔적과 추세를 추적합니다</div>', unsafe_allow_html=True)
 
-# 새로고침
 col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
 with col_btn2:
     if st.button('🔄 최신 데이터 새로고침', use_container_width=True):
         st.cache_data.clear()
 
 raw_df = load_data()
-marcap_dict = get_market_cap_data() # 시가총액 데이터 미리 로드
+marcap_dict = get_market_cap_data()
 
 if raw_df is not None and not raw_df.empty:
     df = clean_data(raw_df)
@@ -203,34 +199,36 @@ if raw_df is not None and not raw_df.empty:
 
         badge_class = "profit-badge-plus" if profit >= 0 else "profit-badge-minus"
         
-        # 상세 데이터 계산 (웹에서 즉석 계산)
         chart_data, analysis = get_stock_analysis(code)
         
-        # 시가총액 가져오기 (없으면 0)
         marcap_val = marcap_dict.get(code, 0)
         marcap_str = f"{int(marcap_val / 100000000):,}억원" if marcap_val > 0 else "정보없음"
 
         with st.container(border=True):
+            # 1단: 기본 정보와 차트
             col_info, col_chart = st.columns([1.8, 1.2])
             
             with col_info:
                 st.markdown(f"**{row['종목명']}** <span style='color:#888; font-size:0.8em;'>({code})</span> <span class='{badge_class}'>{profit_str}</span>", unsafe_allow_html=True)
                 st.markdown(f"<div style='margin-top:5px; font-size:0.95em; font-weight:bold;'>{price_fmt}</div>", unsafe_allow_html=True)
                 st.caption(f"{row['탐색일']} 포착")
-                st.markdown(f"<div style='color:#666; font-size:0.8em;'>{row['거래량급증']}</div>", unsafe_allow_html=True)
+                # (여기 있던 18배 표시는 아래 박스로 이동했습니다)
             
             with col_chart:
                 if chart_data is not None and not chart_data.empty:
                     color_hex = '#d32f2f' if profit >= 0 else '#1976d2'
+                    # config={'staticPlot': True} 추가하여 완전 고정 (터치 안됨)
                     fig = plot_sparkline(chart_data, color_hex)
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                    st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True}) 
                 else:
                     st.caption("차트 로딩 실패")
             
-            # 🌟 [NEW] 상세 정보 섹션 (회색 박스)
+            # 2단: 상세 정보 박스 (레이아웃 분리)
+            # 여기로 '거래량급증' 정보를 옮겼습니다.
             if analysis:
                 st.markdown(f"""
                 <div class="detail-info">
+                • <b>거래량급증:</b> {row['거래량급증']}<br>
                 • <b>시가총액:</b> {marcap_str}<br>
                 • <b>오늘대금:</b> {analysis['amount']:,}억원<br>
                 • <b>추세확인:</b> {analysis['trend']}<br>
