@@ -21,6 +21,7 @@ st.markdown("""
     .main-title { font-size: 1.8rem !important; color: #1E1E1E; text-align: center; font-weight: 800; margin-bottom: 5px; }
     .sub-text { font-size: 0.9rem; color: #555; text-align: center; margin-bottom: 20px; }
     
+    /* 배지 스타일 */
     .badge {
         padding: 3px 8px;
         border-radius: 4px;
@@ -31,6 +32,7 @@ st.markdown("""
     .badge-red { background-color: #ffebee; color: #d32f2f; }
     .badge-blue { background-color: #e3f2fd; color: #1976d2; }
     
+    /* 상세 정보 박스 스타일 (아래쪽 여백 추가) */
     .detail-info {
         font-size: 0.85rem;
         color: #444;
@@ -43,6 +45,7 @@ st.markdown("""
         border: 1px solid #eee;
     }
     
+    /* 요약 지표 가로 정렬 */
     .metric-container {
         display: flex;
         justify-content: space-around;
@@ -124,7 +127,7 @@ def get_stock_analysis(code):
     except:
         return None, None
 
-# 5. 차트 그리기
+# 5. 차트 그리기 (고정)
 def plot_sparkline(data, color_hex):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -151,6 +154,14 @@ def clean_data(df):
         df['수익률_숫자'] = pd.to_numeric(df['수익률_숫자'], errors='coerce').fillna(0)
     if '현재가(Live)' in df.columns:
         df['현재가_표시'] = df['현재가(Live)'].astype(str).str.replace('코드확인', '-')
+    
+    # [NEW] 현재상태 컬럼이 없으면 기본값 '보유중' 처리
+    if '현재상태' not in df.columns:
+        df['현재상태'] = '보유중'
+    else:
+        # 빈칸도 '보유중'으로 처리
+        df['현재상태'] = df['현재상태'].replace('', '보유중')
+        
     return df
 
 # --- 메인 화면 ---
@@ -192,9 +203,14 @@ if raw_df is not None and not raw_df.empty:
         </div>
     """, unsafe_allow_html=True)
 
-    st.subheader("📋 포착 종목 리스트")
+    # 🌟 [핵심] 필터링 로직: 익절, 손절, 만료가 포함된 종목은 숨김
+    # (~는 반대라는 뜻. 즉, 포함되지 '않은' 것만 남김)
+    active_df = df[~df['현재상태'].str.contains('익절|손절|만료')]
+
+    st.subheader(f"📋 보유 종목 리스트 ({len(active_df)}개)")
     
-    for index, row in df.iterrows():
+    # 🌟 필터링된 active_df로 반복문 실행
+    for index, row in active_df.iterrows():
         total_profit = row['수익률_숫자']
         total_profit_str = row['수익률(%)']
         price = row['현재가_표시']
@@ -238,7 +254,7 @@ if raw_df is not None and not raw_df.empty:
                 if chart_data is not None and not chart_data.empty:
                     color_hex = '#d32f2f' if total_profit >= 0 else '#1976d2'
                     fig = plot_sparkline(chart_data, color_hex)
-                    # 🌟 [수정됨] key=f"chart_{code}_{index}" 추가 (에러 해결!)
+                    # key값을 유니크하게 설정하여 에러 방지
                     st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True}, key=f"chart_{code}_{index}") 
                 else:
                     st.caption("차트 로딩 실패")
@@ -254,7 +270,8 @@ if raw_df is not None and not raw_df.empty:
                 </div>
                 """, unsafe_allow_html=True)
 
-    with st.expander("📊 전체 데이터 엑셀형태로 보기"):
+    # 🌟 엑셀 자세히 보기에는 전체 데이터(df)를 그대로 보여줌 (히스토리 확인용)
+    with st.expander("📊 전체 히스토리 보기 (종료된 종목 포함)"):
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 else:
